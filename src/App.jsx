@@ -1,0 +1,335 @@
+import { useCallback, useEffect, useState } from "react";
+import Swal from "sweetalert2";
+import UserForm from "./components/UserForm";
+import { createUser, deleteUser, getUsers, patchUser, updateUser } from "./services/userService";
+
+function showToast(icon, title) {
+  Swal.fire({
+    toast: true,
+    position: 'top-end',
+    icon,
+    title,
+    showConfirmButton: false,
+    timer: 2500,
+    timerProgressBar: true,
+  })
+}
+
+function RoleBadge({ role }) {
+  const palette = {
+    admin: 'bg-indigo-100 text-indigo-700',
+    staff: 'bg-blue-100 text-blue-700',
+    viewer: 'bg-yellow-100 text-yellow-700',
+  }
+
+  return (
+    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${palette[role] ?? 'bg-amber-100 text-amber-700'}`}>
+      {role || 'Guest'}
+    </span>
+  )
+}
+
+function LoadingState() {
+  return (
+    <div className="space-y-3 p-5">
+      {[1, 2, 3].map((item) => (
+        <div key={item} className="h-14 animate-pulse rounded-xl bg-slate-100" />
+      ))}
+    </div>
+  )
+}
+
+function ErrorState({ message, onRetry }) {
+  return (
+    <div className="p-5">
+      <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+        <p className="font-semibold text-red-700">Gagal memuat data</p>
+        <p className="mt-1 text-sm text-red-700">{message}</p>
+        <button type="button" onClick={onRetry}
+        className="mt-3 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-red-700">
+          Coba Lagi
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function EmptyState() {
+  return (
+    <div className="p-10 text-center">
+      <p className="text-lg font-semibold text-slate-800">Belum ada data</p>
+      <p className="mt-1 text-sm text-slate-500">
+      Tambahkan user pertama
+      </p>
+    </div>
+  )
+}
+
+export default function App() {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [editingUser, setEditingUser] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+  const [patchingId, setPatchingId] = useState(null)
+  const syncUsers = useCallback(async ({ withLoading = true, withError = true } = {}) => {
+    if (withLoading) {
+      setLoading(true)
+    } else {
+      setError('')
+    }
+
+    try {
+      const data = await getUsers()
+      setUsers(data)
+      setError('')
+    } catch (err) {
+      if (withError) {
+        setError(err.message || 'Gagal memuat data')
+      } else {
+        showToast('error', 'Gagal menyegarkan daftar user.')
+      }
+    } finally {
+      if (withLoading) {
+        setLoading(false)
+      }
+    }
+  }, [])
+
+  const loadUsers = useCallback(() => syncUsers({ withLoading: true }), [syncUsers])
+  const refreshUsers = useCallback(() => syncUsers({ withLoading: false, withError: false }), [syncUsers])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function fetchInitialUsers() {
+      try {
+        const data = await getUsers()
+        if (!cancelled) setUsers(data)
+      } catch (err) {
+        if (!cancelled) setError(err.message || 'Gagal memuat data')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    fetchInitialUsers()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function handleSave(values) {
+    setSubmitting(true)
+    try {
+      const payload = {
+        name: values.name,
+        data: {
+          email: values.email,
+          phone: values.phone,
+          role: values.role,
+        },
+      }
+
+      const savedUser = editingUser
+        ? await updateUser(editingUser.id, payload)
+        : await createUser(payload)
+
+      if (editingUser) {
+        setUsers((prev) =>
+          prev.map((user) => (user.id === savedUser.id ? savedUser : user))
+        )
+        showToast('success', 'User berhasil diperbarui.')
+        setEditingUser(null)
+      } else {
+        setUsers((prev) => [savedUser, ...prev])
+        showToast('success', 'User berhasil ditambahkan.')
+      }
+
+      await refreshUsers()
+      return true
+    } catch (err) {
+      showToast('error', err.message || 'Gagal menyimpan data.')
+      return false
+    } finally {
+      setSubmitting(false)
+    }
+  }
+async function handleDelete(user) {
+  const result = await Swal.fire({
+    title: 'Hapus user?',
+    text: `User "${user.name}" akan dihapus permanen.`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, hapus',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#dc2626',
+    cancelButtonColor: '#64748b',
+    reverseButtons: true,
+  })
+
+  if (!result.isConfirmed) return
+  setDeletingId(user.id)
+  try {
+    await deleteUser(user.id)
+    setUsers((prev) => prev.filter((item) => item.id !== user.id))
+    if (editingUser?.id === user.id) {
+      setEditingUser(null)
+    }
+    showToast('success', 'User berhasil dihapus.')
+
+    await refreshUsers()
+  } catch (err) {
+    showToast('error', err.message || 'Gagal menghapus data')
+  } finally {
+    setDeletingId(null)
+  }
+}
+async function handlePromote(user) {
+  setPatchingId(user.id)
+  try {
+    const updatedUser = await patchUser(user.id, {
+      data: {
+        ...(user.data ?? {}),
+        role: 'admin',
+      },
+    })
+    setUsers((prev) =>
+      prev.map((item) => (item.id === updatedUser.id ? updatedUser : item))
+    )
+    showToast('success', 'Role diubah menjadi admin')
+
+    await refreshUsers()
+  } catch (err) {
+    showToast('error', err.message || 'Gagal memperbarui role')
+  } finally {
+    setPatchingId(null)
+  }
+}
+
+const totalAdmin = users.filter(
+  (user) => user.data?.role === 'admin'
+).length
+
+return (
+  <div className="min-h-screen bg-slate-100 text-slate-900">
+    <header className="border-b border-slate-200 bg-white">
+      <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <span className="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-400">
+            Materi 3.5 - React JS
+          </span>
+          <h1 className="mt-1 text-2xl font-bold sm:text-3xl">
+            KejangDB - Solusi Database
+          </h1>
+          <p className="mt-1 text-sm text-slate-400">
+            Website sederhana untuk contoh implementasi materi React Fetch API
+          </p>
+        </div>
+        <button type="button" onClick={loadUsers} disabled={loading}
+        className="w-fit rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70">
+          {loading ? 'Memuat data...' : 'Muat ulang'}
+        </button>
+      </div>
+    </header>
+
+    <main className="mx-auto grid max-w-5xl gap-6 px-4 py-8 lg:grid-cols-[380px_1fr]">
+      <section className="h-fit rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:sticky lg:top-6">
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold">
+            {editingUser ? 'Edit User' : 'Tambah User'}
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            {editingUser
+              ? 'Form ini untuk mengedit semua data.'
+              : 'Form ini untuk menambah data.'}
+          </p>
+        </div>
+        <UserForm 
+          editingUser={editingUser}
+          onSubmit={handleSave}
+          onCancel={() => setEditingUser(null)}
+          submitting={submitting}
+        />
+      </section>
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-lg">
+        <div className="flex flex-col gap-2 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold">Daftar User</h2>
+            <p className="text-sm text-slate-500">
+              {users.length} user - {totalAdmin} admin
+            </p>
+          </div>
+          <span className="w-fit rounded-full bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+            GET /collections/users/objects
+          </span>
+        </div>
+        {loading && <LoadingState />}
+        {!loading && error && (
+          <ErrorState message={error} onRetry={loadUsers} />
+        )}
+        {!loading && !error && users.length === 0 && <EmptyState />}
+        {!loading && !error && users.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-600">
+                <tr>
+                  <th className="px-5 py-3 font-semibold">Nama</th>
+                  <th className="px-5 py-3 font-semibold">Email</th>
+                  <th className="px-5 py-3 font-semibold">Telepon</th>
+                  <th className="px-5 py-3 font-semibold">Role</th>
+                  <th className="px-5 py-3 font-semibold text-right">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {users.map((user) => (
+                  <tr key={user.id}
+                  className={editingUser?.id === user.id ? 'bg-indigo-50/60' : 'hover:bg-slate-50/70'}>
+                    <td className="px-5 py-3">
+                      <p className="font-medium text-slate-800">
+                        {user.name}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        ID: {user.id}
+                      </p>
+                    </td>
+                    <td className="px-5 py-3 text-slate-600">
+                      {user.data?.email || '-'}
+                    </td>
+                    <td className="px-5 py-3 text-slate-600">
+                      {user.data?.phone || '-'}
+                    </td>
+                    <td className="px-5 py-3">
+                      <RoleBadge role={user.data?.role} />
+                    </td>
+                    <td className="px-5 py-3">
+                      <div className="flex justify-end gap-2">
+                        {user.data?.role !== 'admin' && (
+                          <button type="button" onClick={() => handlePromote(user)} disabled={patchingId === user.id}
+                          className="rounded-lg border border-indigo-200 bg-indigo-100 px-2.5 py-1.5 text-xs font-medium text-indigo-700 transition hover:bg-indigo-200 disabled:opacity-60">
+                            {patchingId === user.id ? '...' : 'Promosikan'}
+                          </button>
+                        )}
+                        <button type="button" onClick={() => setEditingUser(user)}
+                          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-blue-100">
+                            Edit
+                          </button>
+                          <button type="button" onClick={() => handleDelete(user)} disabled={deletingId === user.id}
+                          className="rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-100 disabled:opacity-60">
+                            {deletingId === user.id ? '...' : 'Hapus'}
+                          </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </main>
+  </div>
+)
+}
