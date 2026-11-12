@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Swal from "sweetalert2";
-import FormInput from "./FormInput";
+import FormInput from "../ui/FormInput";
 
 const userSchema = z.object({
     name: z.string().trim().min(3, 'Nama minimal 3 karakter'),

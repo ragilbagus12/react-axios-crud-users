@@ -1,86 +1,13 @@
-import { useCallback, useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
-import UserForm from "./components/UserForm";
+import UserForm from "./components/users/UserForm";
+import RoleBadge from "./components/users/RoleBadge";
+import LoadingState from "./components/states/LoadingState";
+import ErrorState from "./components/states/ErrorState";
+import EmptyState from "./components/states/EmptyState";
+import NoResultState from "./components/states/NoResultState";
+import showToast from "./utils/toast";
 import { createUser, deleteUser, getUsers, patchUser, updateUser } from "./services/userService";
-
-function showToast(icon, title) {
-  Swal.fire({
-    toast: true,
-    position: 'top-end',
-    icon,
-    title,
-    showConfirmButton: false,
-    timer: 2500,
-    timerProgressBar: true,
-  })
-}
-
-function RoleBadge({ role }) {
-  const palette = {
-    admin: 'bg-indigo-100 text-indigo-700',
-    staff: 'bg-blue-100 text-blue-700',
-    viewer: 'bg-yellow-100 text-yellow-700',
-  }
-
-  return (
-    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${palette[role] ?? 'bg-amber-100 text-amber-700'}`}>
-      {role || 'Guest'}
-    </span>
-  )
-}
-
-function LoadingState() {
-  return (
-    <div className="space-y-3 p-5">
-      {[1, 2, 3].map((item) => (
-        <div key={item} className="h-14 animate-pulse rounded-xl bg-slate-100" />
-      ))}
-    </div>
-  )
-}
-
-function ErrorState({ message, onRetry }) {
-  return (
-    <div className="p-5">
-      <div className="rounded-xl border border-red-200 bg-red-50 p-4">
-        <p className="font-semibold text-red-700">Gagal memuat data</p>
-        <p className="mt-1 text-sm text-red-700">{message}</p>
-        <button type="button" onClick={onRetry}
-        className="mt-3 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-red-700">
-          Coba Lagi
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function EmptyState() {
-  return (
-    <div className="p-10 text-center">
-      <p className="text-lg font-semibold text-slate-800">Belum ada data</p>
-      <p className="mt-1 text-sm text-slate-500">
-      Tambahkan user pertama
-      </p>
-    </div>
-  )
-}
-
-function NoResultState({ query, onClear }) {
-  return (
-    <div className="p-10 text-center">
-      <p className="text-lg font-semibold text-slate-800">
-        User tidak ditemukan.
-      </p>
-      <p className="mt-1 text-sm text-slate-400">
-        Tidak ada hasil untuk "{query}".
-      </p>
-      <button type="button" onClick={onClear}
-      className="mt-4 rounded-lg bg-white text-sm border border-slate-200 font-semibold text-slate-800 transition hover:bg-blue-100">
-        Reset Pencarian
-      </button>
-    </div>
-  );
-}
 
 export default function App() {
   const [users, setUsers] = useState([]);
@@ -312,7 +239,7 @@ return (
         {!loading && !error && users.length > 0 && filteredUsers.length === 0 && (
           <NoResultState 
             query={searchKeyword}
-            onClear={() => setSearchKeyword('')}
+            onClear={() => setSearchKeyword('')} 
           />
         )}
         {!loading && !error && users.length > 0 && (
